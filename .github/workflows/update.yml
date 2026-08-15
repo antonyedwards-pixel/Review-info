@@ -2,8 +2,11 @@ name: Twice Daily Analytics Update
 
 on:
   schedule:
-    - cron: '0 0,12 * * *' # Runs every day at 00:00 and 12:00 UTC
+    - cron: '0 0,12 * * *'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   update-data:
@@ -29,6 +32,7 @@ jobs:
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git pull origin main --rebase || true
           git add data.json
-          git commit -m "Automatic analytics update: $(date)" || exit 0
-          git push
+          git commit -m "Automatic analytics update" || echo "No changes to commit"
+          git push origin main || git push

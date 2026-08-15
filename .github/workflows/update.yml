@@ -28,12 +28,12 @@ jobs:
       - name: Run scraper
         run: python scrape.py
 
-      - name: Commit and push changes
+  - name: Commit and push changes
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git fetch origin main
-          git rebase origin/main || git rebase --abort
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          git pull origin main --rebase --autostash || true
           git add data.json
           git commit -m "Automatic analytics update" || echo "No changes to commit"
           git push origin main

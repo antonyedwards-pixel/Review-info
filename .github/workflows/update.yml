@@ -1,0 +1,34 @@
+name: Twice Daily Analytics Update
+
+on:
+  schedule:
+    - cron: '0 0,12 * * *' # Runs every day at 00:00 and 12:00 UTC
+  workflow_dispatch:
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install playwright
+          playwright install
+
+      - name: Run scraper
+        run: python scrape.py
+
+      - name: Commit and push changes
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add data.json
+          git commit -m "Automatic analytics update: $(date)" || exit 0
+          git push

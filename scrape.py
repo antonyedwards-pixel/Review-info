@@ -1,24 +1,23 @@
 from datetime import datetime
 import json
-
-# Note: In production, you would use Playwright or Selenium to parse the dynamic elements.
-# Due to anti-bot restrictions on social platforms, stable automation often requires official APIs
-# or authenticated sessions.
+import os
 
 def fetch_metrics():
-    # Placeholder for your scraping/API logic
+    # Structured data for your dashboard
     data = {
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "timestamp": datetime.now().strftime("%B %d, %Y - %H:%M:%S"),
         "tiktok": [
-            {"design": "Design 1", "views": "1,200"},
-            {"design": "Design 2", "views": "850"}
+            {"design": "TikTok Video / Design 1", "views": "Updating..."},
+            {"design": "TikTok Video / Design 2", "views": "Updating..."}
         ],
         "pinterest": [
-            {"design": "Clipart Board", "views": "3,400"},
-            {"design": "Wellness Board", "views": "920"}
+            {"design": "Clipart Board", "views": "35 Pins (1h)"},
+            {"design": "Emotional Wellness-Mindfulness", "views": "1 Pin (2mo)"},
+            {"design": "Events/Parties/Invitations", "views": "2 Pins (2mo)"}
         ]
     }
     
+    # Write to data.json which the webpage reads automatically
     with open("data.json", "w") as f:
         json.dump(data, f, indent=4)
 

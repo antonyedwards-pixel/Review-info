@@ -24,7 +24,9 @@ jobs:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: pip install yt-dlp
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
 
       - name: Run scraper
         run: python scrape.py

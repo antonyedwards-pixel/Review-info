@@ -23,13 +23,10 @@ jobs:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: |
-          pip install playwright
-          playwright install --with-deps chromium
+        run: pip install yt-dlp
 
       - name: Run scraper
         run: python scrape.py
-        continue-on-error: true
 
       - name: Commit and push changes
         run: |

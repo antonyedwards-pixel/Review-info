@@ -1,145 +1,118 @@
 from datetime import datetime
 import json
-import time
-import random
+import subprocess
+import sys
+import urllib.request
+import urllib.error
 import traceback
+import re
 
 # ============================================================
-# CONFIGURATION - Update these URLs with your profile pages
+# CONFIGURATION
 # ============================================================
-TIKTOK_PROFILE = "https://www.tiktok.com/@chictemplatebyamanda"
-PINTEREST_PROFILE = "https://uk.pinterest.com/chictemplatebyamanda/"
+TIKTOK_USERNAME = "chictemplatebyamanda"
+PINTEREST_USERNAME = "chictemplatebyamanda"
 # ============================================================
 
 
-def scrape_tiktok(page):
-    """Scrape TikTok profile for video metrics."""
-    print(f"[TikTok] Navigating to {TIKTOK_PROFILE}")
+def scrape_tiktok():
+    """Scrape TikTok profile using yt-dlp (more reliable than headless browser)."""
+    print(f"[TikTok] Fetching profile for @{TIKTOK_USERNAME}")
     try:
-        page.goto(TIKTOK_PROFILE, wait_until="domcontentloaded", timeout=45000)
-        time.sleep(random.uniform(5, 10))
-
-        # Scroll to load content
-        for _ in range(3):
-            page.mouse.wheel(0, 800)
-            time.sleep(random.uniform(1, 3))
+        url = f"https://www.tiktok.com/@{TIKTOK_USERNAME}"
+        result = subprocess.run(
+            [
+                sys.executable, "-m", "yt_dlp",
+                "--flat-playlist",
+                "--dump-json",
+                "--playlist-items", "1:10",
+                "--no-warnings",
+                "--quiet",
+                url
+            ],
+            capture_output=True, text=True, timeout=120
+        )
 
         results = []
-
-        # Try multiple selector strategies
-        videos = page.query_selector_all('[data-e2e="user-post-item"]')
-        if not videos:
-            videos = page.query_selector_all('div[class*="DivVideoFeed"] div[class*="DivItemContainer"]')
-        if not videos:
-            videos = page.query_selector_all('div[data-e2e="user-post-item-list"] > div')
-
-        for video in videos[:10]:
+        for line in result.stdout.strip().split("\n"):
+            if not line:
+                continue
             try:
-                title_el = video.query_selector('a[title]')
-                title = title_el.get_attribute("title") if title_el else "Untitled"
+                video = json.loads(line)
+                title = video.get("title", video.get("description", "Untitled"))[:80]
+                view_count = video.get("view_count")
+                like_count = video.get("like_count")
 
-                views_el = video.query_selector('strong[data-e2e="video-views"]')
-                if not views_el:
-                    views_el = video.query_selector('strong')
-                views = views_el.inner_text() if views_el else "N/A"
+                views = "N/A"
+                if view_count is not None:
+                    views = f"{view_count:,} views"
+                elif like_count is not None:
+                    views = f"{like_count:,} likes"
 
                 results.append({"design": title, "views": views})
-            except Exception as e:
-                print(f"[TikTok] Error parsing video: {e}")
+            except json.JSONDecodeError:
                 continue
 
         print(f"[TikTok] Found {len(results)} videos")
         return results
+    except subprocess.TimeoutExpired:
+        print("[TikTok] Request timed out")
+        return []
     except Exception as e:
-        print(f"[TikTok] Scraping failed: {e}")
+        print(f"[TikTok] Failed: {e}")
         traceback.print_exc()
         return []
 
 
-def scrape_pinterest(page):
-    """Scrape Pinterest profile for board metrics."""
-    print(f"[Pinterest] Navigating to {PINTEREST_PROFILE}")
+def scrape_pinterest():
+    """Scrape Pinterest boards using their public data endpoint."""
+    print(f"[Pinterest] Fetching boards for @{PINTEREST_USERNAME}")
     try:
-        page.goto(PINTEREST_PROFILE, wait_until="domcontentloaded", timeout=45000)
-        time.sleep(random.uniform(5, 10))
+        url = f"https://www.pinterest.com/{PINTEREST_USERNAME}/_saved/"
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+        })
 
-        # Scroll to load content
-        for _ in range(3):
-            page.mouse.wheel(0, 800)
-            time.sleep(random.uniform(1, 3))
+        with urllib.request.urlopen(req, timeout=30) as response:
+            html = response.read().decode("utf-8", errors="replace")
 
+        # Extract board data from Pinterest's embedded JSON
         results = []
 
-        # Try multiple selector strategies
-        boards = page.query_selector_all('[data-test-id="board"]')
-        if not boards:
-            boards = page.query_selector_all('div[data-test-id="grid-item"]')
-        if not boards:
-            boards = page.query_selector_all('div[class*="board"]')
+        # Look for board data in the page's initial data
+        pattern = r'"name"\s*:\s*"([^"]+)".*?"pin_count"\s*:\s*(\d+)'
+        matches = re.findall(pattern, html)
 
-        for board in boards[:15]:
-            try:
-                title_el = board.query_selector('[data-test-id="board-name"]')
-                if not title_el:
-                    title_el = board.query_selector('span')
-                title = title_el.inner_text() if title_el else "Untitled"
+        if matches:
+            for name, count in matches[:15]:
+                results.append({"design": name, "views": f"{int(count)} pins"})
 
-                count_el = board.query_selector('[data-test-id="board-pin-count"]')
-                if not count_el:
-                    count_el = board.query_selector('div[class*="pinCount"]')
-                count = count_el.inner_text() if count_el else "N/A"
-
-                results.append({"design": title, "views": count})
-            except Exception as e:
-                print(f"[Pinterest] Error parsing board: {e}")
-                continue
+        # Fallback: try to extract from board grid items
+        if not results:
+            board_pattern = r'"board":\s*\{[^}]*"name"\s*:\s*"([^"]+)"'
+            names = re.findall(board_pattern, html)
+            for name in names[:15]:
+                results.append({"design": name, "views": "pins"})
 
         print(f"[Pinterest] Found {len(results)} boards")
         return results
     except Exception as e:
-        print(f"[Pinterest] Scraping failed: {e}")
+        print(f"[Pinterest] Failed: {e}")
         traceback.print_exc()
         return []
 
 
 def fetch_metrics():
-    from playwright.sync_api import sync_playwright
-
     data = {
         "timestamp": datetime.now().strftime("%B %d, %Y - %H:%M:%S"),
         "tiktok": [],
         "pinterest": []
     }
 
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=[
-                    "--no-sandbox",
-                    "--disable-blink-features=AutomationControlled",
-                    "--disable-dev-shm-usage"
-                ]
-            )
-            context = browser.new_context(
-                user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-                viewport={"width": 1920, "height": 1080},
-                locale="en-US"
-            )
-            page = context.new_page()
-
-            # Mask automation detection
-            page.add_init_script("""
-                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-            """)
-
-            data["tiktok"] = scrape_tiktok(page)
-            data["pinterest"] = scrape_pinterest(page)
-
-            browser.close()
-    except Exception as e:
-        print(f"[Fatal] Browser error: {e}")
-        traceback.print_exc()
+    data["tiktok"] = scrape_tiktok()
+    data["pinterest"] = scrape_pinterest()
 
     with open("data.json", "w") as f:
         json.dump(data, f, indent=4)

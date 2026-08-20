@@ -1,8 +1,0 @@
-- name: Commit and push changes
-        run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git pull origin main --rebase || true
-          git add data.json
-          git commit -m "Automatic analytics update: $(date)" || exit 0
-          git push

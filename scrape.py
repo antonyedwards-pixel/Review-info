@@ -2,6 +2,7 @@ from datetime import datetime
 import json
 import time
 import random
+import traceback
 
 # ============================================================
 # CONFIGURATION - Update these URLs with your profile pages
@@ -15,14 +16,23 @@ def scrape_tiktok(page):
     """Scrape TikTok profile for video metrics."""
     print(f"[TikTok] Navigating to {TIKTOK_PROFILE}")
     try:
-        page.goto(TIKTOK_PROFILE, wait_until="networkidle", timeout=30000)
-        time.sleep(random.uniform(3, 6))
+        page.goto(TIKTOK_PROFILE, wait_until="domcontentloaded", timeout=45000)
+        time.sleep(random.uniform(5, 10))
 
-        videos = page.query_selector_all('[data-e2e="user-post-item"]')
-        if not videos:
-            videos = page.query_selector_all('div[class*="DivVideoFeedV2"] > div > div')
+        # Scroll to load content
+        for _ in range(3):
+            page.mouse.wheel(0, 800)
+            time.sleep(random.uniform(1, 3))
 
         results = []
+
+        # Try multiple selector strategies
+        videos = page.query_selector_all('[data-e2e="user-post-item"]')
+        if not videos:
+            videos = page.query_selector_all('div[class*="DivVideoFeed"] div[class*="DivItemContainer"]')
+        if not videos:
+            videos = page.query_selector_all('div[data-e2e="user-post-item-list"] > div')
+
         for video in videos[:10]:
             try:
                 title_el = video.query_selector('a[title]')
@@ -42,6 +52,7 @@ def scrape_tiktok(page):
         return results
     except Exception as e:
         print(f"[TikTok] Scraping failed: {e}")
+        traceback.print_exc()
         return []
 
 
@@ -49,14 +60,23 @@ def scrape_pinterest(page):
     """Scrape Pinterest profile for board metrics."""
     print(f"[Pinterest] Navigating to {PINTEREST_PROFILE}")
     try:
-        page.goto(PINTEREST_PROFILE, wait_until="networkidle", timeout=30000)
-        time.sleep(random.uniform(3, 6))
+        page.goto(PINTEREST_PROFILE, wait_until="domcontentloaded", timeout=45000)
+        time.sleep(random.uniform(5, 10))
 
+        # Scroll to load content
+        for _ in range(3):
+            page.mouse.wheel(0, 800)
+            time.sleep(random.uniform(1, 3))
+
+        results = []
+
+        # Try multiple selector strategies
         boards = page.query_selector_all('[data-test-id="board"]')
         if not boards:
             boards = page.query_selector_all('div[data-test-id="grid-item"]')
+        if not boards:
+            boards = page.query_selector_all('div[class*="board"]')
 
-        results = []
         for board in boards[:15]:
             try:
                 title_el = board.query_selector('[data-test-id="board-name"]')
@@ -78,6 +98,7 @@ def scrape_pinterest(page):
         return results
     except Exception as e:
         print(f"[Pinterest] Scraping failed: {e}")
+        traceback.print_exc()
         return []
 
 
@@ -90,19 +111,35 @@ def fetch_metrics():
         "pinterest": []
     }
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-            viewport={"width": 1920, "height": 1080},
-            locale="en-US"
-        )
-        page = context.new_page()
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-dev-shm-usage"
+                ]
+            )
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+                viewport={"width": 1920, "height": 1080},
+                locale="en-US"
+            )
+            page = context.new_page()
 
-        data["tiktok"] = scrape_tiktok(page)
-        data["pinterest"] = scrape_pinterest(page)
+            # Mask automation detection
+            page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            """)
 
-        browser.close()
+            data["tiktok"] = scrape_tiktok(page)
+            data["pinterest"] = scrape_pinterest(page)
+
+            browser.close()
+    except Exception as e:
+        print(f"[Fatal] Browser error: {e}")
+        traceback.print_exc()
 
     with open("data.json", "w") as f:
         json.dump(data, f, indent=4)
